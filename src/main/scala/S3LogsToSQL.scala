@@ -15,22 +15,51 @@ import org.apache.spark.sql.types.{StructType,StructField,StringType}
   CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions
   and limitations under the License.*/
 
+
+/**Like CloudTrailToSQL, S3LogsToSQL is written for you to cut and paste it into your spark-shell and use it from there.
+  * TODO: We do not auto-discover your S3 logs so you need to pass a bucket and prefix.
+  *
+  * Sample use:
+  *  1. Start the Spark shell as follows:
+  spark-shell  --master yarn-client  --num-executors 40  --conf spark.executor.cores=2
+  *  2. Copy and paste this entire file into the shell.  It will create an object called S3LogsToSQL
+  *  3. Load your S3 logs into a Hive table by running a command like the following:
+  S3LogsToSQL.createHiveTable("<BUCKET>", "S3logs", sqlContext)
+  *  4. Query them, e.g.,
+  sqlContext.sql("select distinct ip from s3logshive").show(10000)
+  * */
 object S3LogsToSQL extends Logging {
+  val TABLE_NAME = "s3logs"
   val schemaString = "bucketOwner bucket date ip requester operation key"
-  // Generate the schema based on the string of schema
+  val RDD_PARTITION_COUNT = 1000 //TODO: Consider making this dynamic and configurable.
+
+  // Generate the schema from the schema string
   val schema =
     StructType(
       schemaString.split(" ").map(fieldName => StructField(fieldName, StringType, true)))
 
   def rawS3Logs(sparkContext:SparkContext, logsBucket:String, logsPrefix:String):RDD[String] = {
     val path = "s3://" + logsBucket + "/" + logsPrefix + "*"
-    val rawStrings:RDD[String] = sparkContext.textFile(path)
+    val rawStrings:RDD[String] = sparkContext.textFile(path).coalesce(RDD_PARTITION_COUNT, true)
     rawStrings
   }
 
-  /** See http://docs.aws.amazon.com/AmazonS3/latest/dev/LogFormat.html */
+  def rawS3LogsToTempTable(rawStrings:RDD[String], sqlContext:SQLContext):DataFrame = {
+    val s3LogsDF = rawS3LogsToDataFrame(rawStrings, sqlContext)
+    s3LogsDF.registerTempTable(TABLE_NAME)
+    s3LogsDF
+  }
 
-  def S3Logs(rawStrings:RDD[String], sqlContext:SQLContext):DataFrame = {
+  def rawS3LogsToHiveTable(rawStrings:RDD[String], sqlContext:SQLContext):DataFrame = {
+    val s3LogsDF = rawS3LogsToDataFrame(rawStrings, sqlContext)
+    s3LogsDF.write.saveAsTable(TABLE_NAME+"hive")
+    s3LogsDF
+  }
+
+  /** See http://docs.aws.amazon.com/AmazonS3/latest/dev/LogFormat.html for the format.
+    * TODO, Right now we only load in part of the logs.  It would be better to use regexes or a more thoughtful
+    * parsing scheme.*/
+  def rawS3LogsToDataFrame(rawStrings:RDD[String], sqlContext:SQLContext):DataFrame = {
     val rowRDD = rawStrings.map((line:String) => {
       val lineArray = line.split(" ")
 
@@ -51,8 +80,18 @@ object S3LogsToSQL extends Logging {
     }).filter(_.isDefined).map(_.get)
 
     val s3LogsDF = sqlContext.createDataFrame(rowRDD, schema)
-    s3LogsDF.registerTempTable("s3logs")
     s3LogsDF.cache()
     s3LogsDF
   }
+
+  def createTable(logsBucket:String, logsPrefix:String, sqlContext:SQLContext):DataFrame = {
+    val rawLogsRDD = rawS3Logs(sqlContext.sparkContext, logsBucket, logsPrefix)
+    rawS3LogsToTempTable(rawLogsRDD, sqlContext)
+  }
+
+  def createHiveTable(logsBucket:String, logsPrefix:String, sqlContext:SQLContext):DataFrame = {
+    val rawLogsRDD = rawS3Logs(sqlContext.sparkContext, logsBucket, logsPrefix)
+    rawS3LogsToHiveTable(rawLogsRDD, sqlContext)
+  }
 }
+
