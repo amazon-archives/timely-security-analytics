@@ -27,7 +27,7 @@ sqlContext.sql("select distinct eventSource, eventName, userIdentity.principalId
 ```
 var cloudtrail = CloudTrailToSQL.createHiveTable(sc, sqlContext)
 ```
-##Addition uses
+##Additional uses
 You can configure and invoke geoIP lookup functions using code like that below.  To do this, you will need a copy of the Maxmind GeoIP database.  See the Dependencies section of this documentation.
 ```
 import reinvent.securityanalytics.utilities.Configuration
