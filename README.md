@@ -50,3 +50,11 @@ sqlContext.sql("select distinct sourceIpAddress, city(sourceIpAddress), country(
 ##Future work
 * The current code builds profiles based on deduplicated historical data, which doesn't allow for easy frequency analysis.  Passing the data, with duplicates, would allow for more meaningful analysis.
 * The current code operates on a per-field basis and should be improved to allow profilers to operate on the full activity.  For example, its hard prevent duplicate alarms on Tor usage since Tor usage, by definition, comes from different exit nodes.  It would make more sense to ignore duplicates based on the actor rather than the source IP address.
+
+#Dependencies
+This code has the key dependencies described below.  For a full list, including versions, please see the pom.xml file included in the repo.
+* Apache Spark is our core processing engine.
+* AWS Java SDK is how we communicate with AWS.
+* Scala version 2.10 is the language in which this code is written.
+* The Maxmind [GeoIP database](http://dev.maxmind.com/geoip/geoip2/downloadable/). 
+* The Maxmind [GeoIP2 Java library](https://github.com/maxmind/GeoIP2-java).
